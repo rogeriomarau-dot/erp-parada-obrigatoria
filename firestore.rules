@@ -35,8 +35,11 @@ service cloud.firestore {
     match /config/contadores {
       allow read, write: if equipe();
     }
+    match /config/ia {
+      allow read, write: if perfil(['admin']);
+    }
     match /config/{doc} {
-      allow read: if ativo();
+      allow read: if ativo() && doc != 'ia';
       allow write: if perfil(['admin']);
     }
 
@@ -72,6 +75,7 @@ service cloud.firestore {
       allow create, update: if perfil(['admin']) || (gestao() && request.resource.data.origem == 'venda');
     }
     match /fornecedores/{id} { allow read, write: if perfil(['admin']); }
+    match /anexos/{id}       { allow read, write: if perfil(['admin']); }
 
     // fichas técnicas
     match /insumos/{id}  { allow read, write: if perfil(['admin']); }
