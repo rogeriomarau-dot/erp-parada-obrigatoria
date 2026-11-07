@@ -1,0 +1,88 @@
+rules_version = '2';
+// Regras de segurança — ERP Espaço Parada Obrigatória
+// Perfis: admin, caixa, garcom, impressora (programa do computador do caixa)
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function logado()  { return request.auth != null; }
+    function eu()      { return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data; }
+    function ativo()   { return logado() && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)) && eu().ativo == true; }
+    function perfil(p) { return ativo() && eu().perfil in p; }
+    function equipe()  { return perfil(['admin','caixa','garcom']); }
+    function gestao()  { return perfil(['admin','caixa']); }
+
+    // usuários: cada um lê o próprio; o administrador gerencia todos.
+    // A primeira conta (bootstrap) pode se criar como admin uma única vez.
+    match /usuarios/{uid} {
+      allow read: if logado() && (request.auth.uid == uid || perfil(['admin']));
+      allow create: if perfil(['admin'])
+        || (logado() && request.auth.uid == uid
+            && !exists(/databases/$(database)/documents/config/bootstrap)
+            && getAfter(/databases/$(database)/documents/config/bootstrap).data.admin == uid
+            && request.resource.data.perfil == 'admin');
+      allow update, delete: if perfil(['admin']);
+    }
+
+    match /config/bootstrap {
+      allow read: if true;
+      allow create: if logado() && request.resource.data.admin == request.auth.uid;
+      allow update, delete: if false;
+    }
+    match /config/agente {
+      allow read: if ativo();
+      allow write: if perfil(['impressora','admin']);
+    }
+    match /config/contadores {
+      allow read, write: if equipe();
+    }
+    match /config/{doc} {
+      allow read: if ativo();
+      allow write: if perfil(['admin']);
+    }
+
+    // cardápio
+    match /produtos/{id}   { allow read: if ativo(); allow write: if perfil(['admin']); }
+    match /adicionais/{id} { allow read: if ativo(); allow write: if perfil(['admin']); }
+
+    // clientes da tele-entrega
+    match /clientes/{id} {
+      allow read, create, update: if gestao();
+      allow delete: if perfil(['admin']);
+    }
+
+    // comandas (mesas, tele, retirada): garçom abre e pede a conta; só caixa/admin fecha ou cancela
+    match /comandas/{id} {
+      allow read: if equipe();
+      allow create: if equipe() && request.resource.data.status == 'aberta';
+      allow update: if gestao() || (perfil(['garcom']) && request.resource.data.status in ['aberta','conta']);
+      allow delete: if perfil(['admin']);
+    }
+
+    // itens lançados: garçom lança; só caixa/admin cancela
+    match /itens/{id} {
+      allow read: if equipe();
+      allow create: if equipe();
+      allow update: if gestao();
+      allow delete: if perfil(['admin']);
+    }
+
+    // financeiro: só o administrador lê e mexe; o caixa só grava as receitas de venda do fechamento
+    match /lancamentos/{id} {
+      allow read, delete: if perfil(['admin']);
+      allow create, update: if perfil(['admin']) || (gestao() && request.resource.data.origem == 'venda');
+    }
+    match /fornecedores/{id} { allow read, write: if perfil(['admin']); }
+
+    // fichas técnicas
+    match /insumos/{id}  { allow read, write: if perfil(['admin']); }
+    match /receitas/{id} { allow read, write: if perfil(['admin']); }
+
+    // fila de impressão
+    match /impressoes/{id} {
+      allow read: if ativo();
+      allow create: if equipe();
+      allow update: if perfil(['admin','caixa','impressora']);
+      allow delete: if perfil(['admin']);
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "agente-impressao-parada-obrigatoria",
+  "version": "1.0.0",
+  "description": "Programa de impressão do ERP Espaço Parada Obrigatória (ESC/POS em rede)",
+  "type": "module",
+  "main": "agente.js",
+  "scripts": { "start": "node agente.js" },
+  "dependencies": { "firebase": "10.14.1" }
+}

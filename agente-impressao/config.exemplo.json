@@ -1,0 +1,14 @@
+{
+  "firebase": {
+    "apiKey": "AIzaSyADtQVqbjfEqGWxQeW-EsW_yj4FiJAZWEg",
+    "authDomain": "erp-parada-obrigatoria.firebaseapp.com",
+    "projectId": "erp-parada-obrigatoria",
+    "storageBucket": "erp-parada-obrigatoria.firebasestorage.app",
+    "messagingSenderId": "530600451330",
+    "appId": "1:530600451330:web:1fb6bd285e062737d1761b"
+  },
+  "email": "impressora@paradaobrigatoria.com.br",
+  "senha": "SENHA DO USUARIO DE IMPRESSAO",
+  "nomeMaquina": "Caixa",
+  "validadeMinutos": 120
+}
