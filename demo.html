@@ -303,7 +303,7 @@ img[src=""]{display:none}
    abre em MODO DEMONSTRAÇÃO (dados só no navegador, sem impressão real).
    ===================================================================== */
 const CFG = {};
-const VERSAO = "3.9.0";
+const VERSAO = "3.9.1";
 const NUVEM = !!CFG.projectId;
 const LOGO = "";
 const CARDAPIO = {"produtos":[],"adicionais":[]};
@@ -431,9 +431,9 @@ function telaLoginDemo(){
 function telaLogin(bootstrap){
   $('#app').classList.add('hide'); const L = $('#login'); L.classList.remove('hide');
   const prim = !bootstrap;
-  L.innerHTML = `<div class="box"><div class="lg"><img src="${LOGO}" alt=""><h1>ERP Finance Gestão Pro</h1><small>${prim ? 'Primeiro acesso: crie a conta do administrador' : 'Entre com seu e-mail e senha'}</small></div>
+  L.innerHTML = `<div class="box"><div class="lg"><img src="${LOGO}" alt=""><h1>ERP Finance Gestão Pro</h1><small>${prim ? 'Primeiro acesso: crie a conta do administrador' : 'Entre com seu usuário (ou e-mail) e senha'}</small></div>
     <form id="fLogin">${prim ? `<label class="f">Seu nome<input name="nome" required autocomplete="name"></label>` : ''}
-      <label class="f">E-mail<input name="email" type="email" required autocomplete="username"></label>
+      <label class="f">${prim ? 'E-mail' : 'Usuário ou e-mail'}<input name="email" type="${prim ? 'email' : 'text'}" required autocomplete="username" autocapitalize="none" spellcheck="false"></label>
       <label class="f">Senha<input name="senha" type="password" required minlength="6" autocomplete="${prim?'new-password':'current-password'}"></label>
       <button class="btn pri blk lg">${prim ? 'Criar administrador' : 'Entrar'}</button>
       ${prim ? '' : `<button type="button" class="btn ghost blk mt" data-a="esqueci">Esqueci minha senha</button>`}
@@ -443,10 +443,15 @@ function telaLogin(bootstrap){
       if (prim) { const cr = await FB.Au.createUserWithEmailAndPassword(FB.auth, f.email.trim(), f.senha); const id = cr.user.uid;
         await ST.batch([{op:'set', col:'usuarios', id, data:{nome:f.nome.trim(), email:f.email.trim(), perfil:'admin', ativo:true, criadoEm:agora()}}, {op:'set', col:'config', id:'bootstrap', data:{admin:id, em:agora()}}]);
         location.reload();
-      } else await FB.Au.signInWithEmailAndPassword(FB.auth, f.email.trim(), f.senha);
+      } else await FB.Au.signInWithEmailAndPassword(FB.auth, loginParaEmail(f.email), f.senha);
     } catch (x) { er.textContent = msgAuth(x); } };
 }
-function msgAuth(x){ const c = x.code || ''; if (c.includes('invalid-credential') || c.includes('wrong-password') || c.includes('user-not-found')) return 'E-mail ou senha incorretos.'; if (c.includes('email-already')) return 'Este e-mail já tem conta.'; if (c.includes('weak-password')) return 'A senha precisa ter pelo menos 6 caracteres.'; if (c.includes('network')) return 'Sem internet.'; if (c.includes('too-many')) return 'Muitas tentativas. Aguarde alguns minutos.'; return x.message || String(x); }
+// login por nome de usuário: sem "@" vira um e-mail interno (o Firebase só aceita e-mail; nenhum e-mail é enviado para ele)
+const DOM_USR = 'login.erp-parada-obrigatoria.app';
+const loginParaEmail = v => { v = String(v || '').trim(); if (v.includes('@')) return v; return semAcento(v).toLowerCase().replace(/\s+/g, '.').replace(/[^a-z0-9._-]/g, '') + '@' + DOM_USR; };
+const ehUsr = e => String(e || '').endsWith('@' + DOM_USR);
+const mostraLogin = e => ehUsr(e) ? String(e).split('@')[0] : (e || '');
+function msgAuth(x){ const c = x.code || ''; if (c.includes('invalid-credential') || c.includes('wrong-password') || c.includes('user-not-found')) return 'Usuário/e-mail ou senha incorretos.'; if (c.includes('email-already')) return 'Este usuário/e-mail já tem conta.'; if (c.includes('invalid-email')) return 'Usuário ou e-mail inválido.'; if (c.includes('weak-password')) return 'A senha precisa ter pelo menos 6 caracteres.'; if (c.includes('network')) return 'Sem internet.'; if (c.includes('too-many')) return 'Muitas tentativas. Aguarde alguns minutos.'; return x.message || String(x); }
 let unsubPerfil = null;
 async function aoMudarAuth(user){
   if (unsubPerfil) { unsubPerfil(); unsubPerfil = null; }
@@ -1126,13 +1131,13 @@ R.usuarios = () => {
   const l = [...S.usuarios].filter(u => !u.excluido).sort((a, b) => (a.perfil || '').localeCompare(b.perfil || '') || (a.nome || '').localeCompare(b.nome || ''));
   return `<div class="sec-h"><h2>Usuários (${l.length})</h2><button class="btn pri" data-a="novoUser">+ Novo usuário</button></div>
   <p class="small muted" style="margin:-4px 0 12px">Cada garçom entra uma vez no próprio celular e o acesso fica salvo. Crie também um usuário com perfil <b>Programa de impressão</b> para o computador do caixa.</p>
-  <div class="card tw"><table class="t"><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Situação</th><th></th></tr></thead><tbody>${l.map(u => `<tr><td><b>${esc(u.nome)}</b></td><td>${esc(u.email || '')}</td><td>${PERFIS[u.perfil] || u.perfil}</td><td>${u.ativo === false ? '<span class="chip err">Bloqueado</span>' : '<span class="chip ok">Ativo</span>'}</td><td class="r">${u.id !== U.uid ? `<button class="btn sm" data-a="editUser" data-id="${u.id}">Editar</button>` : '<span class="small muted">você</span>'}</td></tr>`).join('')}</tbody></table></div>`;
+  <div class="card tw"><table class="t"><thead><tr><th>Nome</th><th>Usuário / e-mail</th><th>Perfil</th><th>Situação</th><th></th></tr></thead><tbody>${l.map(u => `<tr><td><b>${esc(u.nome)}</b></td><td>${esc(mostraLogin(u.email))}</td><td>${PERFIS[u.perfil] || u.perfil}</td><td>${u.ativo === false ? '<span class="chip err">Bloqueado</span>' : '<span class="chip ok">Ativo</span>'}</td><td class="r">${u.id !== U.uid ? `<button class="btn sm" data-a="editUser" data-id="${u.id}">Editar</button>` : '<span class="small muted">você</span>'}</td></tr>`).join('')}</tbody></table></div>`;
 };
 function modalUser(id){
   const u = id ? S.usuarios.find(x => x.id === id) : null;
   abrirModal(`<div class="mh"><h3>${u ? 'Editar usuário' : 'Novo usuário'}</h3><button class="btn sm ghost" data-a="fecharModal">✕</button></div><form id="fUser"><div class="mb">
     <label class="f">Nome *<input name="nome" required value="${esc(u?.nome || '')}"></label>
-    ${u ? `<p class="small muted">E-mail: ${esc(u.email)}</p>` : `<div class="grid2"><label class="f">E-mail *<input name="email" type="email" required></label><label class="f">Senha inicial *<input name="senha" required minlength="6"></label></div>`}
+    ${u ? `<p class="small muted">${ehUsr(u.email) ? 'Usuário' : 'E-mail'}: ${esc(mostraLogin(u.email))}</p>` : `<div class="grid2"><label class="f">Usuário ou e-mail *<input name="email" required autocapitalize="none" spellcheck="false" placeholder="ex.: maria"><span class="small muted" style="font-weight:400">Pode ser só um nome (ex.: maria) ou um e-mail.</span></label><label class="f">Senha inicial *<input name="senha" required minlength="6" placeholder="mínimo 6 caracteres"></label></div>`}
     <label class="f">Perfil<select name="perfil">${Object.entries(PERFIS).map(([k, v]) => `<option value="${k}" ${u?.perfil === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
     ${u ? `<label class="opt"><input type="checkbox" name="ativo" ${u.ativo === false ? '' : 'checked'}><span>Acesso liberado</span></label>` : ''}<p class="small" id="uErr" style="color:var(--red)"></p></div>
     <div class="mf"><button type="button" class="btn" data-a="fecharModal">Voltar</button><button class="btn pri">Salvar</button></div></form>`);
@@ -1140,8 +1145,9 @@ function modalUser(id){
     try {
       if (u) { await gravar([{op:'update', col:'usuarios', id:u.id, data:{nome:f.get('nome').trim(), perfil:f.get('perfil'), ativo:!!f.get('ativo'), atualizadoEm:agora()}}], 'Usuário salvo'); fecharModal(); return; }
       const app2 = FB.A.initializeApp(CFG, 'cad' + Date.now()); const a2 = FB.Au.getAuth(app2);
-      try { const cr = await FB.Au.createUserWithEmailAndPassword(a2, f.get('email').trim(), f.get('senha'));
-        await ST.batch([{op:'set', col:'usuarios', id:cr.user.uid, data:{nome:f.get('nome').trim(), email:f.get('email').trim(), perfil:f.get('perfil'), ativo:true, criadoEm:agora(), criadoPor:U.nome}}]);
+      const em = loginParaEmail(f.get('email')); if (!/^[^@]+@[^@]+$/.test(em) || em.startsWith('@')) { $('#uErr').textContent = 'Informe um usuário ou e-mail válido.'; btn.disabled = false; return; }
+      try { const cr = await FB.Au.createUserWithEmailAndPassword(a2, em, f.get('senha'));
+        await ST.batch([{op:'set', col:'usuarios', id:cr.user.uid, data:{nome:f.get('nome').trim(), email:em, perfil:f.get('perfil'), ativo:true, criadoEm:agora(), criadoPor:U.nome}}]);
         await FB.Au.signOut(a2); } finally { FB.A.deleteApp(app2); }
       fecharModal(); toast('Usuário criado');
     } catch (x) { $('#uErr').textContent = msgAuth(x); btn.disabled = false; } };
@@ -2557,7 +2563,7 @@ const ACOES = {
   menu: () => $('#side').classList.toggle('open'),
   sair, fecharModal,
   demoLogin: id => { const m = {admin:{nome:'Administrador', perfil:'admin'}, caixa:{nome:'Caixa', perfil:'caixa'}, garcom:{nome:'João', perfil:'garcom'}, garcom2:{nome:'Maria', perfil:'garcom'}}[id]; U = Object.assign({uid:'demo-' + id}, m); sessionStorage.setItem('epo_demo_user', JSON.stringify(U)); V = {view:'mesas', p:{}}; entrar(); },
-  esqueci: async () => { const em = prompt('Digite seu e-mail para receber o link de nova senha:'); if (!em) return; try { await FB.Au.sendPasswordResetEmail(FB.auth, em.trim()); toast('Enviamos o link para ' + em); } catch (x) { toast(msgAuth(x), 1); } },
+  esqueci: async () => { const em = prompt('Digite seu e-mail para receber o link de nova senha:'); if (!em) return; if (!em.includes('@')) return toast('Acesso por nome de usuário não recebe e-mail. Peça ao administrador uma nova senha.', 1); try { await FB.Au.sendPasswordResetEmail(FB.auth, em.trim()); toast('Enviamos o link para ' + em); } catch (x) { toast(msgAuth(x), 1); } },
   ir: id => ir(id),
   abrirMesa: m => { const c = cmdMesa(m); V = {view:'comanda', p: c ? {id:c.id, tipo:'mesa'} : {mesa:m, tipo:'mesa', modo:'catalogo'}}; V.keepScroll = false; render(); window.scrollTo(0, 0); },
   abrirCmd: id => { const c = S.comandas.find(x => x.id === id); ir('comanda', {id, tipo:c ? c.tipo : 'tele'}); },
