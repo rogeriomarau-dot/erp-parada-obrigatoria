@@ -303,7 +303,7 @@ img[src=""]{display:none}
    abre em MODO DEMONSTRAÇÃO (dados só no navegador, sem impressão real).
    ===================================================================== */
 const CFG = {};
-const VERSAO = "3.10.0";
+const VERSAO = "3.11.0";
 const NUVEM = !!CFG.projectId;
 const LOGO = "";
 const CARDAPIO = {"produtos":[],"adicionais":[]};
@@ -555,7 +555,15 @@ function render(){
   const rt = document.getElementById('recTopo'); if (rt) { const f = () => document.documentElement.style.setProperty('--recH', rt.offsetHeight + 'px'); f(); if (window.ResizeObserver) new ResizeObserver(f).observe(rt); }
   if (V.keepScroll) window.scrollTo(0, sy); V.keepScroll = true;
 }
-function ir(view, p = {}){ if (V && V.view === 'receita') { const a = document.activeElement; if (a && a.dataset && a.dataset.rf) { aoEditarReceita(a); autoSalvarReceita(); } salvarPendenteReceita(); } V = {view, p, dirty:false}; $('#side').classList.remove('open'); render(); window.scrollTo(0, 0); }
+/* cada tela volta na mesma posição em que você saiu (rolagem da página e das tabelas) */
+const posChave = () => V ? V.view + (V.view === 'receita' ? ':' + (V.p.id || (V.p.d && V.p.d.id) || 'nova') : V.view === 'comanda' ? ':' + (V.p.id || V.p.mesa || '') : '') : '';
+let POS = {}; try { POS = JSON.parse(sessionStorage.getItem('epo_pos') || '{}'); } catch {}
+function posGuardar(){ const k = posChave(); if (!k) return; POS[k] = {y:window.scrollY, t:[...document.querySelectorAll('#app .tw')].map(e => [e.scrollTop, e.scrollLeft])}; try { sessionStorage.setItem('epo_pos', JSON.stringify(POS)); } catch {} }
+function posVoltar(){ const q = POS[posChave()]; if (!q) { window.scrollTo(0, 0); return; }
+  const aplica = () => { const tws = [...document.querySelectorAll('#app .tw')]; (q.t || []).forEach(([t, l], i) => { if (tws[i]) { tws[i].scrollTop = t; tws[i].scrollLeft = l; } }); window.scrollTo(0, q.y || 0); };
+  aplica(); requestAnimationFrame(aplica); setTimeout(aplica, 120); }
+window.addEventListener('pagehide', () => posGuardar());
+function ir(view, p = {}){ if (V && V.view === 'receita') { const a = document.activeElement; if (a && a.dataset && a.dataset.rf) { aoEditarReceita(a); autoSalvarReceita(); } salvarPendenteReceita(); } posGuardar(); V = {view, p, dirty:false}; $('#side').classList.remove('open'); render(); posVoltar(); }
 const R = {};
 
 /* --------------------------- helpers comanda --------------------------- */
@@ -1069,20 +1077,31 @@ R.produtos = () => {
   <p class="small muted" style="margin:-4px 0 12px">O <b>destino</b> define em qual impressora o item sai: <b>Cozinha</b> (pratos) ou <b>Copa</b> (bebidas, drinks e sobremesas). Produtos inativos somem do cardápio do garçom.</p>
   <div class="card tw">${todos.length ? `<table class="t"><thead><tr><th>Produto</th><th>Custo</th><th>Destino</th><th class="r">Preço</th><th>Ativo</th><th></th></tr></thead><tbody>${Object.keys(porCat).map(k => `<tr class="cat"><td colspan="6">${esc(k)} <span class="muted small">(${porCat[k].length})</span></td></tr>` + porCat[k].map(p => `<tr style="${p.ativo === false ? 'opacity:.5' : ''}"><td><b>${esc(p.nome)}</b>${p.tipo ? `<div class="small muted">${esc(p.tipo)}</div>` : ''}</td><td><span class="chip ${tipoCustoProd(p) === 'bebidas' ? 'info' : 'neu'}">${tipoCustoProd(p) === 'bebidas' ? 'bebidas' : 'insumos'}</span></td><td><select class="inp" data-dest="${p.id}" style="min-height:34px;padding:4px 8px"><option value="cozinha" ${p.destino !== 'copa' ? 'selected' : ''}>Cozinha</option><option value="copa" ${p.destino === 'copa' ? 'selected' : ''}>Copa</option></select></td><td class="r num"><b>${brl(p.preco)}</b></td><td><input type="checkbox" data-ativo="${p.id}" ${p.ativo !== false ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--red)"></td><td class="r"><button class="btn sm" data-a="editProd" data-id="${p.id}">Editar</button></td></tr>`).join('')).join('')}</tbody></table>` : `<div class="empty"><b>Nenhum produto cadastrado</b>${CARDAPIO.produtos.length ? `Use o botão amarelo para importar os ${CARDAPIO.produtos.length} produtos e ${CARDAPIO.adicionais.length} adicionais das fichas técnicas, ou cadastre um a um.` : 'Cadastre os produtos do cardápio no botão + Novo produto.'}</div>`}</div>`;
 };
-function modalProd(id){
-  const p = id ? S.produtos.find(x => x.id === id) : null; const cats = [...new Set(S.produtos.map(x => x.categoria).filter(Boolean))];
-  abrirModal(`<div class="mh"><h3>${p ? 'Editar produto' : 'Novo produto'}</h3><button class="btn sm ghost" data-a="fecharModal">✕</button></div><form id="fProd" data-rid="${p ? p.id : ''}"><div class="mb">
+function M_PROD_CUSTO(){ const F = $('#fProd'); if (!F) return; const box = $('#pCustoBox'); if (!box) return; const upd = () => box.classList.toggle('hide', (F.querySelector('[name=origemCusto]:checked') || {}).value !== 'revenda'); F.querySelectorAll('[name=origemCusto]').forEach(r => r.addEventListener('change', upd)); upd(); }
+function modalProd(id, opt){
+  const p = id ? S.produtos.find(x => x.id === id) : null; const cats = [...new Set(S.produtos.map(x => x.categoria).filter(Boolean))]; const prato = !p && opt && opt.prato;
+  abrirModal(`<div class="mh"><h3>${p ? 'Editar produto' : prato ? 'Novo prato' : 'Novo produto'}</h3><button class="btn sm ghost" data-a="fecharModal">✕</button></div><form id="fProd" data-rid="${p ? p.id : ''}"><div class="mb">
     <label class="f">Nome *<input name="nome" required value="${esc(p?.nome || '')}"></label>
     <div class="grid2"><label class="f">Categoria *<input name="categoria" required list="dlCat" value="${esc(p?.categoria || '')}"></label><label class="f">Preço de venda (R$) *<input name="preco" required inputmode="decimal" autocomplete="off" value="${p ? n2(p.preco) : ''}"></label></div>
     <datalist id="dlCat">${cats.map(k => `<option>${esc(k)}</option>`).join('')}</datalist>
     <label class="f">Conta de receita (plano de contas)<select name="contaReceita"><option value="">Automática pela categoria${p && contaReceitaProd(p.id) ? ' (' + esc(nomeConta(contaReceitaProd(p.id))) + ')' : ''}</option>${PLANO().filter(g => g.secao === 'receita').map(g => `<optgroup label="${esc(g.nome)}">${g.contas.filter(c => c.ativo !== false && !['r_servico','r_entrega'].includes(c.id)).map(c => `<option value="${c.id}" ${p && p.contaReceita === c.id ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</optgroup>`).join('')}</select></label>
     <label class="f">Tipo de custo (CMV)<select name="custoTipo"><option value="insumos" ${p && tipoCustoProd(p) === 'insumos' ? 'selected' : ''}>Custo insumos (pratos)</option><option value="bebidas" ${p && tipoCustoProd(p) === 'bebidas' ? 'selected' : ''}>Custo bebidas</option></select></label>
     <div class="grid2"><label class="f">Destino (impressora)<select name="destino"><option value="cozinha" ${p?.destino !== 'copa' ? 'selected' : ''}>Cozinha</option><option value="copa" ${p?.destino === 'copa' ? 'selected' : ''}>Copa / Bar</option></select></label><label class="f">Ordem na categoria<input name="ordem" inputmode="numeric" value="${esc(p?.ordem ?? '')}" placeholder="opcional"></label></div>
+    ${!p ? `<div class="card pad" style="box-shadow:none;margin-bottom:12px"><b>Como calcular o custo</b>
+      <label class="opt" style="margin-top:6px"><input type="radio" name="origemCusto" value="ft" ${prato ? 'checked' : ''}><span><b>Ficha técnica</b>: montar agora com os insumos e gramagens (pratos, drinks, porções)</span></label>
+      <label class="opt"><input type="radio" name="origemCusto" value="revenda"><span><b>Revenda</b>: custo de compra por unidade (bebidas prontas, sobremesas compradas)</span></label>
+      <label class="opt"><input type="radio" name="origemCusto" value="" ${prato ? '' : 'checked'}><span>Definir depois</span></label>
+      <label class="f hide" id="pCustoBox" style="margin-top:6px">Custo de compra por unidade (R$)<input name="custoCompra" inputmode="decimal" autocomplete="off"></label></div>` : ''}
     <label class="opt"><input type="checkbox" name="ativo" ${p?.ativo === false ? '' : 'checked'}><span>Ativo (aparece para o garçom)</span></label></div>
     <div class="mf">${p ? `<button type="button" class="btn danger" id="pDel">Excluir</button><span class="sp"></span>` : ''}<button type="button" class="btn" data-a="fecharModal">Voltar</button><button class="btn pri">Salvar</button></div></form>`);
   $('#fProd').onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target); const pr = num(f.get('preco')); if (pr <= 0) return toast('Informe o preço', 1);
     const d = {nome:f.get('nome').trim(), categoria:f.get('categoria').trim(), preco:pr, destino:f.get('destino'), custoTipo:f.get('custoTipo') || (f.get('destino') === 'copa' ? 'bebidas' : 'insumos'), contaReceita:f.get('contaReceita') || '', ordem:f.get('ordem') ? +f.get('ordem') : null, ativo:!!f.get('ativo'), atualizadoEm:agora()};
-    fecharModal(); await gravar([{op: p ? 'update' : 'set', col:'produtos', id:p ? p.id : uid(), data: p ? d : Object.assign(d, {criadoEm:agora()})}], 'Produto salvo'); };
+    const oc = p ? '' : (f.get('origemCusto') || ''); const nid = p ? p.id : uid();
+    if (oc === 'revenda') { d.tipo = 'Revenda'; const cc = num(f.get('custoCompra')); if (cc > 0) { d.custoCompra = r2(cc); d.custoEm = hoje(); d.custoOrigem = 'cadastro'; } }
+    if (oc === 'ft') d.tipo = 'Ficha técnica';
+    fecharModal(); await gravar([{op: p ? 'update' : 'set', col:'produtos', id:nid, data: p ? d : Object.assign(d, {criadoEm:agora()})}], oc === 'ft' ? 'Prato criado · monte a ficha técnica' : 'Produto salvo');
+    if (oc === 'ft') abrirReceita(null, {tipo:'ft', produtoId:nid, nome:d.nome}); };
+  M_PROD_CUSTO();
   if ($('#pDel')) $('#pDel').onclick = async () => { if (!confirm('Excluir o produto ' + p.nome + '? Para só esconder do garçom, desmarque “Ativo”.')) return; fecharModal(); await gravar([{op:'del', col:'produtos', id:p.id}], 'Produto excluído'); };
 }
 async function importar(){
@@ -2099,7 +2118,7 @@ R.cmv = () => {
   const ads = [...S.adicionais].sort((a, b) => a.nome.localeCompare(b.nome));
   const optsAd = sel => `<option value="">—</option><optgroup label="Insumos">${[...S.insumos].sort((a, b) => a.nome.localeCompare(b.nome)).map(i => `<option value="i:${i.id}" ${sel === 'i:' + i.id ? 'selected' : ''}>${esc(i.nome)}</option>`).join('')}</optgroup><optgroup label="Subprodutos">${sps().map(s => `<option value="s:${s.id}" ${sel === 's:' + s.id ? 'selected' : ''}>${esc(s.nome)}</option>`).join('')}</optgroup>`;
   return `<div class="kpis"><div class="card kpi"><small>Itens com custo</small><b class="num">${comCusto.length} de ${rows.length}</b></div><div class="card kpi"><small>Acima da meta (${n2(f.metaCMV)}%)</small><b class="num" style="${acima ? 'color:var(--red)' : ''}">${acima}</b></div><div class="card kpi"><small>CMV médio simples</small><b class="num">${comCusto.length ? n2(media * 100) + '%' : '—'}</b><span class="small muted">insumos ${mediaT('insumos') ? n2(mediaT('insumos') * 100) + '%' : '—'} · bebidas ${mediaT('bebidas') ? n2(mediaT('bebidas') * 100) + '%' : '—'}</span></div><div class="card kpi"><small>Deduções na margem líquida</small><b class="num">${n2(Object.values(f.ded).reduce((s, v) => s + (+v || 0), 0))}%</b><span class="small muted">ajuste em Configurações</span></div></div>
-  <div class="sec-h mt"><h2>Resumo do cardápio</h2></div>
+  <div class="sec-h mt"><h2>Resumo do cardápio</h2><span class="sp"></span><button class="btn pri no-print" data-a="novoPrato">+ Novo prato</button></div>
   <p class="small muted" style="margin:-4px 0 12px">Pratos com ficha puxam o custo da ficha. Para itens de revenda (bebidas, sobremesas prontas), digite o <b>custo de compra por unidade</b> direto na coluna Custo.</p>
   <div class="card tw fixo"><table class="t cmvt"><thead><tr><th>Item</th><th class="r">Custo</th><th class="r">Preço</th><th class="r">CMV</th><th class="r">Margem bruta</th><th class="r">Margem líquida</th><th class="r">Preço sugerido</th><th>Situação</th></tr></thead><tbody>
   ${Object.entries(cats).map(([g, xs]) => `<tr class="cat"><td colspan="8">${esc(g)}</td></tr>` + xs.map(({p, c}) => { const pr = precif(+p.preco, c.custo); return `<tr><td><b>${esc(p.nome)}</b><div class="small muted">${c.fonte === 'ft' ? 'ficha técnica' : 'custo de compra'}</div></td>
@@ -2607,7 +2626,7 @@ const ACOES = {
   demoLogin: id => { const m = {admin:{nome:'Administrador', perfil:'admin'}, caixa:{nome:'Caixa', perfil:'caixa'}, garcom:{nome:'João', perfil:'garcom'}, garcom2:{nome:'Maria', perfil:'garcom'}}[id]; U = Object.assign({uid:'demo-' + id}, m); sessionStorage.setItem('epo_demo_user', JSON.stringify(U)); V = {view:'mesas', p:{}}; entrar(); },
   esqueci: async () => { const em = prompt('Digite seu e-mail para receber o link de nova senha:'); if (!em) return; if (!em.includes('@')) return toast('Acesso por nome de usuário não recebe e-mail. Peça ao administrador uma nova senha.', 1); try { await FB.Au.sendPasswordResetEmail(FB.auth, em.trim()); toast('Enviamos o link para ' + em); } catch (x) { toast(msgAuth(x), 1); } },
   ir: id => ir(id),
-  abrirMesa: m => { const c = cmdMesa(m); V = {view:'comanda', p: c ? {id:c.id, tipo:'mesa'} : {mesa:m, tipo:'mesa', modo:'catalogo'}}; V.keepScroll = false; render(); window.scrollTo(0, 0); },
+  abrirMesa: m => { posGuardar(); const c = cmdMesa(m); V = {view:'comanda', p: c ? {id:c.id, tipo:'mesa'} : {mesa:m, tipo:'mesa', modo:'catalogo'}}; V.keepScroll = false; render(); window.scrollTo(0, 0); },
   abrirCmd: id => { const c = S.comandas.find(x => x.id === id); ir('comanda', {id, tipo:c ? c.tipo : 'tele'}); },
   catalogo: () => { V.p.modo = 'catalogo'; V.p.busca = ''; render(); window.scrollTo(0, 0); },
   voltarCmd: () => { if (!cmdAtual()) { const k = cartKey(); if ((CART[k] || []).length && !confirm('Descartar os itens do carrinho?')) return; delete CART[k]; ir('mesas'); return; } V.p.modo = ''; render(); window.scrollTo(0, 0); },
@@ -2635,7 +2654,7 @@ const ACOES = {
   vMes: () => { const d = diaOp(); V.p.de = d.slice(0, 8) + '01'; V.p.ate = d; render(); },
   vAtualiza: () => { VD = null; render(); },
   impF: f => { V.p.f = f; render(); }, verImp: id => verImp(id), reimp: id => reimp(id), cancImp: id => cancImp(id),
-  novoProd: () => modalProd(), editProd: id => modalProd(id), importar: () => importar(),
+  novoProd: () => modalProd(), novoPrato: () => modalProd(null, {prato:true}), editProd: id => modalProd(id), importar: () => importar(),
   novoAd: () => modalAd(), editAd: id => modalAd(id),
   teste: async k => { const p = IMPR()[k]; if (!p.ip && NUVEM) return toast('Informe e salve o IP da impressora primeiro', 1); await gravar([job(k, 'teste', 'Teste ' + DESTINOS[k], tkTeste(k, p))], 'Teste enviado para ' + DESTINOS[k]); },
   imprimir: () => imprimir(),
@@ -2667,6 +2686,12 @@ const ACOES = {
   insAgr: () => { V.p.agrupar = !V.p.agrupar; render(); }, lerNota: () => { const f = $('#fileNota'); f.value = ''; f.onchange = () => f.files[0] && lerNotaCompra(f.files[0]); f.click(); }, impPrecos: () => { const f = $('#filePrecos'); f.value = ''; f.onchange = () => f.files[0] && lerArquivoPrecos(f.files[0]); f.click(); }
 };
 document.addEventListener('click', e => { const el = e.target.closest('[data-a]'); if (!el) return; const fn = ACOES[el.dataset.a]; if (!fn) return; e.preventDefault(); fn(el.dataset.id); });
+/* campos de valor dentro das tabelas (custo de compra, quantidade do adicional): salvam sozinhos enquanto você digita */
+const SALVA_DIG = {cc:v => ({col:'produtos', data:{custoCompra:r2(num(v))}}), adq:v => ({col:'adicionais', data:{qtd:num(v)}})};
+function salvaDigitado(el){ const k = Object.keys(SALVA_DIG).find(x => el.dataset && el.dataset[x]); if (!k) return false; const id = el.dataset[k]; if (el.value.trim() === '') return true; const o = SALVA_DIG[k](el.value);
+  ST.batch([{op:'update', col:o.col, id, data:o.data}]).catch(e => toast('Erro ao gravar: ' + (e.code || e.message), 1)); return true; }
+document.addEventListener('input', e => { const el = e.target; if (el.dataset && (el.dataset.cc || el.dataset.adq)) { clearTimeout(el._sd); el._sd = setTimeout(() => salvaDigitado(el), 700); el._pend = true; } }, true);
+window.addEventListener('pagehide', () => document.querySelectorAll('[data-cc],[data-adq]').forEach(el => { if (el._pend) { clearTimeout(el._sd); salvaDigitado(el); } }));
 document.addEventListener('input', e => { const el = e.target; if (el.dataset && el.dataset.iq && INVD) { INVD.itens[+el.dataset.iq].qtd = el.value; INVD.dirty = true; invRascSalvar(); clearTimeout(el._t); el._t = setTimeout(render, 600); return; } if (el.closest && el.closest('#fGeral,#fImpr,#fFin,#fIA')) V.dirty = true; if (el.dataset && el.dataset.rf) { aoEditarReceita(el); return; } if (el.dataset && el.dataset.in === 'rcbusca') { RCF.busca = el.value; clearTimeout(el._t); el._t = setTimeout(render, 220); return; } if (el.dataset && el.dataset.in === 'busca') { V.p.busca = el.value; clearTimeout(el._t); el._t = setTimeout(render, 180); } });
 document.addEventListener('change', async e => { const el = e.target;
   if (el.id === 'vDe' || el.id === 'vAte') { V.p[el.id === 'vDe' ? 'de' : 'ate'] = el.value; if (V.p.de > V.p.ate) V.p[el.id === 'vDe' ? 'ate' : 'de'] = el.value; render(); }
@@ -2676,6 +2701,7 @@ document.addEventListener('change', async e => { const el = e.target;
   else if (el.dataset.rf && el.tagName === 'INPUT') { const rr = aoEditarReceita(el); limpaRaw(); if (rr) setTimeout(render, Date.now() - _gesto < 400 ? 250 : 0); autoSalvarReceita(); } // espera o clique (ex.: Salvar ficha) terminar antes de redesenhar
   if (el.dataset.mov) { const id = el.dataset.mov, dest = el.value; await salvarPlano(g => { let c = null; g.forEach(x => { const i = x.contas.findIndex(k => k.id === id); if (i >= 0) c = x.contas.splice(i, 1)[0]; }); const d = g.find(x => x.id === dest); if (c && d) d.contas.push(c); }, 'Conta movida'); }
 
+  if (el.dataset.cc || el.dataset.adq) { clearTimeout(el._sd); el._pend = false; }
   if (el.dataset.cc) await gravar([{op:'update', col:'produtos', id:el.dataset.cc, data:{custoCompra:r2(num(el.value))}}], 'Custo salvo');
   if (el.dataset.adi) await gravar([{op:'update', col:'adicionais', id:el.dataset.adi, data:{insumoRef:el.value}}]);
   if (el.dataset.adq) await gravar([{op:'update', col:'adicionais', id:el.dataset.adq, data:{qtd:num(el.value)}}], 'Quantidade salva');
