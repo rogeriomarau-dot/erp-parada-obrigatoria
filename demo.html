@@ -304,7 +304,7 @@ img[src=""]{display:none}
    abre em MODO DEMONSTRAÇÃO (dados só no navegador, sem impressão real).
    ===================================================================== */
 const CFG = {};
-const VERSAO = "3.11.1";
+const VERSAO = "3.12.0";
 const NUVEM = !!CFG.projectId;
 const LOGO = "";
 const CARDAPIO = {"produtos":[],"adicionais":[]};
@@ -2034,7 +2034,7 @@ function modalIns(id){
     const st = $('#autoIns'); if (st) st.textContent = r === 'ok' ? 'Salvo automaticamente às ' + new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}) : 'Salvo (sincronizando com a nuvem…)'; };
   fI.addEventListener('change', () => { clearTimeout(insTimer); insTimer = setTimeout(() => salvarIns(false), 300); });
   fI.onsubmit = async e => { e.preventDefault(); await salvarIns(true); };
-  if ($('#iDel')) $('#iDel').onclick = async () => { clearTimeout(insTimer); insTimer = null; const n = S.receitas.filter(r => (r.itens || []).some(it => it.ref === 'i:' + x.id)).length; if (n) return toast(`Usado em ${n} ficha(s). Tire das fichas antes de excluir.`, 1); if (!confirm('Excluir ' + x.nome + '?')) return; fecharModal(); await gravar([{op:'del', col:'insumos', id:x.id}], 'Excluído'); };
+  if ($('#iDel')) $('#iDel').onclick = async () => { clearTimeout(insTimer); insTimer = null; if (usosRef('i:' + x.id).total) return modalUsos('i:' + x.id, x.nome, 'insumo'); if (!confirm('Excluir ' + x.nome + '?')) return; fecharModal(); await gravar([{op:'del', col:'insumos', id:x.id}], 'Excluído'); };
 }
 
 /* ------------------------------ SUBPRODUTOS / FICHAS (listas) ------------------------------ */
@@ -2112,9 +2112,30 @@ async function salvarReceita(auto, dd){
   V.p.d = Object.assign({id}, dados); V.p.id = id; render();
 }
 function marcaAuto(d, txt){ d._auto = txt; const el = document.getElementById('autoRec'); if (el && V.p.d === d) el.textContent = txt; }
+/* onde um insumo/subproduto é usado: fichas técnicas, subprodutos e adicionais */
+function usosRef(ref){ const recs = S.receitas.filter(r => (r.itens || []).some(it => it.ref === ref)); const ads = S.adicionais.filter(a => a.insumoRef === ref); return {recs, ads, total:recs.length + ads.length}; }
+function modalUsos(ref, nome, oque){
+  const u = usosRef(ref); const qtdEm = r => (r.itens || []).filter(it => it.ref === ref).reduce((t, it) => t + (+it.qtd || 0), 0);
+  const prod = r => r.tipo === 'ft' && r.produtoId ? S.produtos.find(p => p.id === r.produtoId) : null;
+  const linhas = [...u.recs].sort((a, b) => (a.tipo || '').localeCompare(b.tipo || '') || String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+  abrirModal(`<div class="mh"><h3>Onde “${esc(nome)}” é usado</h3><button class="btn sm ghost" data-a="fecharModal">✕</button></div><div class="mb">
+    <p style="margin-top:0">Para excluir este ${oque}, ele não pode estar em nenhuma ficha. Clique em <b>Abrir</b> para ir direto à ficha e trocar ou tirar o ingrediente.</p>
+    <div class="tw"><table class="t cmvt"><thead><tr><th>Onde</th><th>Tipo</th><th class="r">Qtde usada</th><th></th></tr></thead><tbody>
+    ${linhas.map(r => { const pr = prod(r); return `<tr style="cursor:pointer" data-usoabr="${r.id}"><td><b>${esc(r.nome || (pr ? pr.nome : '(sem nome)'))}</b>${pr && pr.categoria ? `<div class="small muted">${esc(pr.categoria)}</div>` : ''}</td><td>${r.tipo === 'sp' ? 'Subproduto' : 'Ficha técnica'}</td><td class="r num">${n3(qtdEm(r))}</td><td class="r"><button type="button" class="btn sm" data-usoabr="${r.id}">Abrir</button></td></tr>`; }).join('')}
+    ${u.ads.map(a => `<tr><td><b>${esc(a.nome)}</b></td><td>Adicional</td><td class="r num">${n3(+a.qtd || 0)}</td><td class="r"><button type="button" class="btn sm" data-usoad="1">Abrir</button></td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="small muted" style="margin-bottom:0">Ou use “Tirar de todas e excluir”: o ingrediente sai de ${u.total} lugar(es) acima, o custo dessas fichas é recalculado e o ${oque} é excluído.</p></div>
+    <div class="mf"><button type="button" class="btn danger" id="usoTudo">Tirar de todas e excluir</button><span class="sp"></span><button class="btn" data-a="fecharModal">Fechar</button></div>`, 'wide');
+  $('#modal').querySelectorAll('[data-usoabr]').forEach(el => el.onclick = e => { e.stopPropagation(); const id = el.dataset.usoabr; fecharModal(); abrirReceita(id); });
+  $('#modal').querySelectorAll('[data-usoad]').forEach(el => el.onclick = () => { fecharModal(); ir('cmv'); setTimeout(() => { const t = [...document.querySelectorAll('#app h2')].find(h => /Adicionais/.test(h.textContent)); if (t) t.scrollIntoView({block:'start'}); }, 150); });
+  $('#usoTudo').onclick = async () => {
+    if (!confirm(`Tirar “${nome}” de ${u.total} ficha(s)/adicional(is) e excluir o ${oque}?\n\nO custo dessas fichas vai mudar. Esta ação não pode ser desfeita.`)) return;
+    const [col, id] = ref.startsWith('i:') ? ['insumos', ref.slice(2)] : ['receitas', ref.slice(2)];
+    const ops = [...u.recs.map(r => ({op:'update', col:'receitas', id:r.id, data:{itens:(r.itens || []).filter(it => it.ref !== ref), atualizadoEm:agora()}})), ...u.ads.map(a => ({op:'update', col:'adicionais', id:a.id, data:{insumoRef:'', qtd:0}})), {op:'del', col, id}];
+    fecharModal(); await gravar(ops, `${oque === 'insumo' ? 'Insumo' : 'Subproduto'} excluído e retirado de ${u.total} lugar(es)`); if (col === 'receitas') ir('subprodutos'); };
+}
 async function excluirReceita(){
-  const d = V.p.d; if (!d.id) return; const usos = S.receitas.filter(r => (r.itens || []).some(it => it.ref === 's:' + d.id)).length;
-  if (usos) return toast(`Este subproduto está em ${usos} ficha(s). Tire das fichas antes.`, 1);
+  const d = V.p.d; if (!d.id) return; if (d.tipo === 'sp' && usosRef('s:' + d.id).total) return modalUsos('s:' + d.id, d.nome, 'subproduto');
   if (!confirm('Excluir ' + (d.nome || 'esta ficha') + '?')) return; await gravar([{op:'del', col:'receitas', id:d.id}], 'Excluído'); ir(d.tipo === 'sp' ? 'subprodutos' : 'fichas');
 }
 
