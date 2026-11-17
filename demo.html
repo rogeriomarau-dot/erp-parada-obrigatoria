@@ -303,7 +303,7 @@ img[src=""]{display:none}
    abre em MODO DEMONSTRAÇÃO (dados só no navegador, sem impressão real).
    ===================================================================== */
 const CFG = {};
-const VERSAO = "3.9.1";
+const VERSAO = "3.10.0";
 const NUVEM = !!CFG.projectId;
 const LOGO = "";
 const CARDAPIO = {"produtos":[],"adicionais":[]};
@@ -399,7 +399,7 @@ function storeNuvem(){
 }
 /* grava sem travar a tela quando o celular está sem internet (o Firebase sincroniza depois) */
 async function gravar(ops, msgOk){
-  const p = ST.batch(ops);
+  const p = ST.batch(ops); rascGravou(p);
   p.catch(e => { console.error(e); toast('Erro ao gravar: ' + (e.code || e.message), 1); });
   const r = await Promise.race([p.then(() => 'ok'), sleep(1800).then(() => 'pendente')]);
   if (msgOk) toast(r === 'ok' ? msgOk : msgOk + ' (sincronizando…)');
@@ -540,8 +540,12 @@ document.addEventListener('pointerdown', () => { _gesto = Date.now(); }, true);
 document.addEventListener('keydown', e => { if (e.key === 'Tab') _gesto = Date.now(); }, true);
 document.addEventListener('focusin', e => { const t = e.target; if (t && t.matches && t.matches('input[inputmode=decimal]') && !_restaurando && Date.now() - _gesto < 600) { try { t.select(); } catch (_) {} t._selOnUp = true; } });
 document.addEventListener('mouseup', e => { const t = e.target; if (t && t._selOnUp) { t._selOnUp = false; e.preventDefault(); } }, true);
+/* carrinhos ainda não enviados também ficam guardados no aparelho (não se perdem ao atualizar a página) */
+let CART_U = null;
+function cartSync(){ try { const k = 'epo_cart_' + U.uid; if (CART_U !== U.uid) { CART_U = U.uid; Object.keys(CART).forEach(x => delete CART[x]); Object.assign(CART, JSON.parse(localStorage.getItem(k) || '{}')); } else { const lim = {}; Object.keys(CART).forEach(x => { if (CART[x] && CART[x].length) lim[x] = CART[x]; }); localStorage.setItem(k, JSON.stringify(lim)); } } catch {} }
 function render(){
   if (!U || $('#app').classList.contains('hide')) return;
+  cartSync();
   // preserva foco/cursor de campos durante atualizações em tempo real
   const ae = document.activeElement; const fid = ae && ae.id && $('#view').contains(ae) ? ae.id : null; const sel = fid && ae.selectionStart != null ? [ae.selectionStart, ae.selectionEnd] : null;
   const fn = R[V.view] || R.mesas; const sy = window.scrollY;
@@ -769,7 +773,7 @@ function modalItem(prod, idx){
     M.querySelectorAll('[data-adm]').forEach(b => b.onclick = () => { st.obs = $('#mObs').value; st.ads[b.dataset.adm] = Math.max(0, (st.ads[b.dataset.adm] || 0) - 1); desenha(); });
     M.querySelector('[data-m=ok]').onclick = () => { const sel = ads.filter(a => st.ads[a.id] > 0).map(a => ({id:a.id, nome:a.nome, preco:+a.preco || 0, qtd:st.ads[a.id]}));
       const unit = unitItem(prod, sel); const it = {produtoId:prod.id, nome:prod.nome, categoria:prod.categoria, destino:prod.destino || 'cozinha', preco:+prod.preco || 0, adicionais:sel, obs:$('#mObs').value.trim(), qtd:st.qtd, unit, total:r2(unit * st.qtd)};
-      CART[key] = CART[key] || []; if (ex) CART[key][idx] = it; else CART[key].push(it); fecharModal(); render(); toast(`${st.qtd}x ${prod.nome} no carrinho`); };
+      CART[key] = CART[key] || []; if (ex) CART[key][idx] = it; else CART[key].push(it); cartSync(); fecharModal(); render(); toast(`${st.qtd}x ${prod.nome} no carrinho`); };
   };
   desenha();
 }
@@ -975,7 +979,7 @@ async function excluirCliente(id){
 }
 function modalCliente(id, depois, sugestao){
   const x = id ? S.clientes.find(k => k.id === id) : null; const dig = String(sugestao || '').replace(/\D/g, '');
-  abrirModal(`<div class="mh"><h3>${x ? 'Editar cliente' : 'Novo cliente'}</h3><button class="btn sm ghost" data-a="fecharModal">✕</button></div><form id="fCli"><div class="mb">
+  abrirModal(`<div class="mh"><h3>${x ? 'Editar cliente' : 'Novo cliente'}</h3><button class="btn sm ghost" data-a="fecharModal">✕</button></div><form id="fCli" data-rid="${x ? x.id : ''}"><div class="mb">
     <label class="f">Nome *<input name="nome" required value="${esc(x?.nome || (dig ? '' : sugestao || ''))}"></label>
     <div class="grid2"><label class="f">Telefone *<input name="telefone" required inputmode="tel" value="${esc(x ? fone(x.telefone) : (dig ? sugestao : ''))}"></label><label class="f">Data de nascimento<input name="nascimento" type="date" value="${esc(x?.nascimento || '')}"></label></div>
     <label class="f">Endereço (rua, número, complemento)<input name="endereco" value="${esc(x?.endereco || '')}"></label>
@@ -1067,7 +1071,7 @@ R.produtos = () => {
 };
 function modalProd(id){
   const p = id ? S.produtos.find(x => x.id === id) : null; const cats = [...new Set(S.produtos.map(x => x.categoria).filter(Boolean))];
-  abrirModal(`<div class="mh"><h3>${p ? 'Editar produto' : 'Novo produto'}</h3><button class="btn sm ghost" data-a="fecharModal">✕</button></div><form id="fProd"><div class="mb">
+  abrirModal(`<div class="mh"><h3>${p ? 'Editar produto' : 'Novo produto'}</h3><button class="btn sm ghost" data-a="fecharModal">✕</button></div><form id="fProd" data-rid="${p ? p.id : ''}"><div class="mb">
     <label class="f">Nome *<input name="nome" required value="${esc(p?.nome || '')}"></label>
     <div class="grid2"><label class="f">Categoria *<input name="categoria" required list="dlCat" value="${esc(p?.categoria || '')}"></label><label class="f">Preço de venda (R$) *<input name="preco" required inputmode="decimal" autocomplete="off" value="${p ? n2(p.preco) : ''}"></label></div>
     <datalist id="dlCat">${cats.map(k => `<option>${esc(k)}</option>`).join('')}</datalist>
@@ -1096,7 +1100,7 @@ R.adicionais = () => {
 };
 function modalAd(id){
   const a = id ? S.adicionais.find(x => x.id === id) : null;
-  abrirModal(`<div class="mh"><h3>${a ? 'Editar adicional' : 'Novo adicional'}</h3><button class="btn sm ghost" data-a="fecharModal">✕</button></div><form id="fAd"><div class="mb"><label class="f">Nome *<input name="nome" required value="${esc(a?.nome || '')}"></label><label class="f">Preço (R$) *<input name="preco" required inputmode="decimal" autocomplete="off" value="${a ? n2(a.preco) : ''}"></label><label class="opt"><input type="checkbox" name="ativo" ${a?.ativo === false ? '' : 'checked'}><span>Ativo</span></label></div>
+  abrirModal(`<div class="mh"><h3>${a ? 'Editar adicional' : 'Novo adicional'}</h3><button class="btn sm ghost" data-a="fecharModal">✕</button></div><form id="fAd" data-rid="${a ? a.id : ''}"><div class="mb"><label class="f">Nome *<input name="nome" required value="${esc(a?.nome || '')}"></label><label class="f">Preço (R$) *<input name="preco" required inputmode="decimal" autocomplete="off" value="${a ? n2(a.preco) : ''}"></label><label class="opt"><input type="checkbox" name="ativo" ${a?.ativo === false ? '' : 'checked'}><span>Ativo</span></label></div>
     <div class="mf">${a ? `<button type="button" class="btn danger" id="aDel">Excluir</button><span class="sp"></span>` : ''}<button type="button" class="btn" data-a="fecharModal">Voltar</button><button class="btn pri">Salvar</button></div></form>`);
   $('#fAd').onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target); const d = {nome:f.get('nome').trim(), preco:num(f.get('preco')), ativo:!!f.get('ativo'), atualizadoEm:agora()}; fecharModal(); await gravar([{op: a ? 'update' : 'set', col:'adicionais', id:a ? a.id : uid(), data:d}], 'Adicional salvo'); };
   if ($('#aDel')) $('#aDel').onclick = async () => { if (!confirm('Excluir ' + a.nome + '?')) return; fecharModal(); await gravar([{op:'del', col:'adicionais', id:a.id}], 'Adicional excluído'); };
@@ -1323,7 +1327,7 @@ const contaPorNome = n => { const k = semAcento(n || ''); for (const g of PLANO(
 function modalLanc(tipo, id){
   const x = id ? S.lancamentos.find(k => k.id === id) : null; tipo = x ? x.tipo : tipo; const P = tipo === 'P';
   const st = {anexo:null, fornNovo:null, parcs:[]};
-  abrirModal(`<div class="mh"><h3>${x ? 'Editar lançamento' : P ? 'Nova conta a pagar' : 'Novo recebimento'}</h3><button class="btn sm ghost" data-a="fecharModal">✕</button></div><form id="fLanc"><div class="mb">
+  abrirModal(`<div class="mh"><h3>${x ? 'Editar lançamento' : P ? 'Nova conta a pagar' : 'Novo recebimento'}</h3><button class="btn sm ghost" data-a="fecharModal">✕</button></div><form id="fLanc" data-rid="${x ? x.id : tipo}"><div class="mb">
     ${P && !x ? `<div class="card pad" style="background:var(--surface-2);box-shadow:none;margin-bottom:12px"><div class="row"><button type="button" class="btn dark" id="lFoto">Ler foto ou PDF da conta</button><span class="small muted sp">Conta de luz, água, boleto, nota fiscal… O sistema preenche tudo e você confere.</span></div><input type="file" id="lFile" accept="image/*,application/pdf" class="hide"><div id="lIA" class="small" style="margin-top:8px"></div></div>
       <div class="row" style="gap:6px;margin-bottom:12px"><span class="small muted">Despesas fixas:</span>${ATALHOS_DESP.filter(a => contaPorNome(a[1])).map((a, i) => `<button type="button" class="btn sm" data-at="${i}">${a[0]}</button>`).join('')}</div>` : ''}
     <label class="f">Descrição *<input name="desc" required value="${esc(x?.desc || '')}" placeholder="${P ? 'Ex.: Compra de carnes, aluguel de novembro…' : 'Ex.: Evento particular, aluguel do espaço…'}"></label>
@@ -1497,7 +1501,7 @@ Use ponto como separador decimal no valor. Não invente dados: deixe vazio o que
 function modalBaixa(id){
   const x = S.lancamentos.find(k => k.id === id); if (!x) return; const P = x.tipo === 'P'; const venda = x.origem === 'venda' || (x.tipo === 'R' && +x.taxa > 0);
   const sug = venda ? r2((+x.valor || 0) - (+x.taxa || 0)) : (+x.valor || 0);
-  abrirModal(`<div class="mh"><h3>${P ? 'Pagar' : 'Receber'}: ${esc(x.desc)}</h3><button class="btn sm ghost" data-a="fecharModal">✕</button></div><form id="fBx"><div class="mb">
+  abrirModal(`<div class="mh"><h3>${P ? 'Pagar' : 'Receber'}: ${esc(x.desc)}</h3><button class="btn sm ghost" data-a="fecharModal">✕</button></div><form id="fBx" data-rid="${x.id}"><div class="mb">
     <p class="muted small" style="margin-top:0">Valor do lançamento: <b>${brl(x.valor)}</b> · vencimento ${dataBR(x.vencimento)}${venda ? ` · taxa estimada ${brl(x.taxa)} (${esc(x.forma)})` : ''}</p>
     <div class="grid2"><label class="f">Data do ${P ? 'pagamento' : 'recebimento'}<input name="data" type="date" value="${hoje() < x.vencimento && venda ? x.vencimento : hoje()}"></label><label class="f">Conta bancária<select name="banco">${optsBancos(x.contaBanco || 'banco')}</select></label></div>
     <label class="f">${venda ? 'Valor líquido que caiu no banco (R$)' : P ? 'Valor pago (R$)' : 'Valor recebido (R$)'}<input name="valor" inputmode="decimal" autocomplete="off" value="${n2(sug)}"><span class="small muted" style="font-weight:400">${venda ? 'Se for diferente do estimado, a taxa real vai para a DRE.' : 'Juros ou desconto: a diferença para o valor do lançamento vai para a DRE (juros/multas ou desconto obtido).'}</span></label></div>
@@ -1822,7 +1826,7 @@ async function excluirForn(id){
 }
 function modalForn(id){
   const x = id ? S.fornecedores.find(k => k.id === id) : null;
-  abrirModal(`<div class="mh"><h3>${x ? 'Editar fornecedor' : 'Novo fornecedor'}</h3><button class="btn sm ghost" data-a="fecharModal">✕</button></div><form id="fFn"><div class="mb">
+  abrirModal(`<div class="mh"><h3>${x ? 'Editar fornecedor' : 'Novo fornecedor'}</h3><button class="btn sm ghost" data-a="fecharModal">✕</button></div><form id="fFn" data-rid="${x ? x.id : ''}"><div class="mb">
     <label class="f">Nome *<input name="nome" required value="${esc(x?.nome || '')}"></label>
     <div class="grid2"><label class="f">CNPJ / CPF<input name="doc" value="${esc(x?.doc || '')}"></label><label class="f">Telefone / WhatsApp<input name="telefone" value="${esc(x ? fone(x.telefone) : '')}"></label></div>
     <div class="grid2"><label class="f">Contato (vendedor)<input name="contato" value="${esc(x?.contato || '')}"></label><label class="f">O que fornece<input name="categoria" value="${esc(x?.categoria || '')}" placeholder="Carnes, bebidas, hortifruti…"></label></div>
@@ -2242,6 +2246,11 @@ function cmvMes(ano, mi, tipo){
 
 /* ------------------------------ tela de inventário ------------------------------ */
 let INVD = null;   // contagem em edição
+/* rascunho da contagem: quantidades digitadas ficam guardadas neste aparelho até salvar */
+const invRascK = mes => 'epo_rasc_' + ((typeof U !== 'undefined' && U && U.uid) || 'x') + '_inv:' + mes;
+function invRascLer(mes){ try { const r = JSON.parse(localStorage.getItem(invRascK(mes)) || 'null'); return r && r.itens ? r : null; } catch { return null; } }
+function invRascApagar(mes){ try { localStorage.removeItem(invRascK(mes)); } catch {} }
+function invRascSalvar(){ if (!INVD || !INVD.dirty) return; const it = {}; INVD.itens.forEach(x => { if (x.qtd !== '' && x.qtd != null) it[x.ref] = {qtd:x.qtd, custo:x.custo}; }); try { localStorage.setItem(invRascK(INVD.mes), JSON.stringify({em:Date.now(), data:INVD.data, itens:it})); } catch {} }
 function itensContagem(){
   const its = [];
   S.insumos.forEach(i => its.push({ref:'i:' + i.id, nome:i.nome, unid:i.unid, tipo:tipoCustoIns(i), custo:r2(+i.preco || 0), grupo:i.grupo || ''}));
@@ -2252,12 +2261,14 @@ R.inventario = () => {
   const mes = V.p.mes || (() => { const d = new Date(); return d.getDate() >= 25 ? mesDe(hoje()) : mesAnterior(mesDe(hoje())); })();
   const salvo = INV()[mes];
   if (!INVD || INVD.mes !== mes) { const base = itensContagem(); const q = {}; (salvo ? salvo.itens : []).forEach(x => q[x.ref] = x);
-    INVD = {mes, data:salvo ? salvo.data : ultimoDiaMes(mes), itens:base.map(b => Object.assign(b, q[b.ref] ? {qtd:q[b.ref].qtd, custo:q[b.ref].custo} : {qtd:''})), dirty:false}; }
+    INVD = {mes, data:salvo ? salvo.data : ultimoDiaMes(mes), itens:base.map(b => Object.assign(b, q[b.ref] ? {qtd:q[b.ref].qtd, custo:q[b.ref].custo} : {qtd:''})), dirty:false};
+    const rs = invRascLer(mes); if (rs) { INVD.itens.forEach(x => { const v = rs.itens[x.ref]; if (v) { if (v.qtd != null) x.qtd = v.qtd; if (v.custo != null) x.custo = v.custo; } }); if (rs.data) INVD.data = rs.data; INVD.dirty = true; INVD.rasc = rs.em; } }
   const tot = t => r2(INVD.itens.filter(x => x.tipo === t).reduce((s, x) => s + num(x.qtd) * (+x.custo || 0), 0));
   const ini = contagemAntes(mes); const lista = Object.keys(INV()).sort().reverse();
   const b = semAcento(V.p.busca || ''); const vis = INVD.itens.filter(x => !b || semAcento(x.nome + ' ' + x.grupo).includes(b));
   const bloco = t => { const l = vis.filter(x => x.tipo === t); if (!l.length) return '';
-    return `<tr class="cat"><td colspan="5">${NOME_TIPO[t]} <span class="small muted" style="font-family:var(--f-b);font-weight:500">· ${brl(tot(t))}</span></td></tr>` + l.map(x => { const k = INVD.itens.indexOf(x);
+    const avR = INVD.rasc ? (() => { const d = new Date(INVD.rasc); return `<div class="card pad no-print" style="margin-bottom:12px;background:var(--yel-soft);border-color:#F2D27A"><b>Rascunho recuperado</b>: quantidades digitadas em ${pad(d.getDate())}/${pad(d.getMonth() + 1)} às ${pad(d.getHours())}:${pad(d.getMinutes())} e ainda não salvas. Confira e clique em Salvar contagem. <button class="btn sm" data-a="invDescRasc" style="margin-left:8px">Descartar rascunho</button></div>`; })() : '';
+  return `${avR}<tr class="cat"><td colspan="5">${NOME_TIPO[t]} <span class="small muted" style="font-family:var(--f-b);font-weight:500">· ${brl(tot(t))}</span></td></tr>` + l.map(x => { const k = INVD.itens.indexOf(x);
       return `<tr><td><b>${esc(x.nome)}</b><div class="small muted">${esc(x.grupo)}${x.ref.startsWith('p:') ? ' · revenda' : ''}</div></td><td class="r"><input class="inp num" style="width:100px;text-align:right" id="iq_${k}" data-iq="${k}" inputmode="decimal" autocomplete="off" value="${x.qtd === '' ? '' : esc(String(x.qtd).replace('.', ','))}" placeholder="0"> ${esc(x.unid)}</td>
         <td class="r"><input class="inp num" style="width:100px;text-align:right" id="ic_${k}" data-ic="${k}" inputmode="decimal" autocomplete="off" value="${n2(x.custo)}"></td><td class="r num">${num(x.qtd) ? brl(num(x.qtd) * (+x.custo || 0)) : ''}</td><td class="small muted">${x.custo ? '' : 'sem custo'}</td></tr>`; }).join(''); };
   return `<div class="card pad no-print" style="margin-bottom:14px"><div class="row" style="gap:14px;align-items:flex-end">
@@ -2279,12 +2290,12 @@ async function salvarInventario(){
   if (!its.length && !confirm('Nenhuma quantidade informada. Salvar estoque zerado neste mês?')) return;
   const totIns = r2(its.filter(x => x.tipo === 'insumos').reduce((s, x) => s + x.total, 0)), totBeb = r2(its.filter(x => x.tipo === 'bebidas').reduce((s, x) => s + x.total, 0)); const totEmb = r2(its.filter(x => x.tipo === 'embalagens').reduce((s, x) => s + x.total, 0));
   const c = Object.assign({}, INV()); c[INVD.mes] = {mes:INVD.mes, data:$('#invData').value || ultimoDiaMes(INVD.mes), itens:its, totIns, totBeb, totEmb, em:agora(), por:U.nome};
-  INVD.dirty = false; await gravar([{op:'set', col:'config', id:'inventarios', data:{contagens:c}}], `Contagem de ${nomeMes(INVD.mes)} salva · ${brl(totIns + totBeb + totEmb)}`);
+  INVD.dirty = false; INVD.rasc = null; invRascApagar(INVD.mes); await gravar([{op:'set', col:'config', id:'inventarios', data:{contagens:c}}], `Contagem de ${nomeMes(INVD.mes)} salva · ${brl(totIns + totBeb + totEmb)}`);
 }
 async function excluirInventario(mes){ if (!confirm(`Excluir a contagem de ${nomeMes(mes)}? O CMV desse mês volta a ser só as compras.`)) return;
   const c = Object.assign({}, INV()); delete c[mes]; if (INVD && INVD.mes === mes) INVD = null; await gravar([{op:'set', col:'config', id:'inventarios', data:{contagens:c}}], 'Contagem excluída'); }
 function copiarUltimaContagem(){ const ini = contagemAntes(INVD.mes); if (!ini) return; const q = {}; ini.itens.forEach(x => q[x.ref] = x.qtd);
-  INVD.itens.forEach(x => { if (q[x.ref] != null) x.qtd = q[x.ref]; }); INVD.dirty = true; render(); toast('Quantidades copiadas. Confira e ajuste antes de salvar.'); }
+  INVD.itens.forEach(x => { if (q[x.ref] != null) x.qtd = q[x.ref]; }); INVD.dirty = true; invRascSalvar(); render(); toast('Quantidades copiadas. Confira e ajuste antes de salvar.'); }
 
 /* detalhe do CMV na DRE (estoque inicial, compras, estoque final) */
 function detalheCMV(ano, mi, tipo){
@@ -2554,8 +2565,39 @@ function imprimir(){
 
 /* ================================ MODAL ================================ */
 function abrirModal(html, cls){ const M = $('#modal'); M.innerHTML = `<div class="box ${cls || ''}">${html}</div>`; M.classList.remove('hide'); }
-function fecharModal(){ const M = $('#modal'); M.classList.add('hide'); M.innerHTML = ''; }
-$('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') fecharModal(); });
+function fecharModal(){ const M = $('#modal'); const F = M.querySelector('form'); if (F && F._rascSujo && !F._enviado && !F._descartado) toast('Rascunho guardado: ao abrir de novo, o que você digitou volta.'); M.classList.add('hide'); M.innerHTML = ''; }
+/* ===================== RASCUNHO AUTOMÁTICO DOS FORMULÁRIOS =====================
+   Tudo o que é digitado em lançamentos e cadastros fica guardado neste aparelho enquanto
+   não é salvo. Trocar de tela, fechar a janela, clicar fora ou atualizar a página não perde
+   nada: ao abrir de novo o mesmo formulário, o rascunho volta. Nada vai para o financeiro
+   (DRE, fluxo) sem você clicar em Salvar. */
+const RASC_FORMS = ['fLanc', 'fBx', 'fFn', 'fProd', 'fAd', 'fCli', 'fGeral', 'fImpr', 'fFin'];
+const rascChave = F => 'epo_rasc_' + ((typeof U !== 'undefined' && U && U.uid) || 'x') + '_' + F.id + ':' + (F.dataset.rid || 'novo');
+const rascCampoK = el => el.name ? 'n:' + el.name + (el.type === 'radio' ? '' : ':' + [...el.form.querySelectorAll('[name="' + CSS.escape(el.name) + '"]')].indexOf(el)) : el.id ? 'i:' + el.id : '';
+let RASC_PEND = null;
+function rascSalvar(F){ if (!F || !RASC_FORMS.includes(F.id)) return; const d = {};
+  F.querySelectorAll('input,select,textarea').forEach(el => { if (['file', 'password', 'submit', 'button'].includes(el.type)) return; const k = rascCampoK(el); if (!k) return;
+    if (el.type === 'radio') { if (el.checked) d[k] = el.value; } else d[k] = el.type === 'checkbox' ? el.checked : el.value; });
+  try { localStorage.setItem(rascChave(F), JSON.stringify({em:Date.now(), d})); } catch {} F._rascSujo = true; F._enviado = false; }
+function rascApagar(k){ try { localStorage.removeItem(k); } catch {} }
+function rascGravou(p){ const pend = RASC_PEND; if (!pend || Date.now() - pend.em > 180000) return; RASC_PEND = null; p.then(() => rascApagar(pend.k)).catch(() => {}); }
+function rascRestaurar(F){ if (!F || F._rascOk || !RASC_FORMS.includes(F.id)) return; F._rascOk = true; let r = null; try { r = JSON.parse(localStorage.getItem(rascChave(F)) || 'null'); } catch {} if (!r || !r.d) return;
+  if (Date.now() - r.em > 30 * 864e5) { rascApagar(rascChave(F)); return; }
+  const els = [...F.querySelectorAll('input,select,textarea')]; let n = 0;
+  els.forEach(el => { const k = rascCampoK(el); if (!k || !(k in r.d)) return; const v = r.d[k];
+    if (el.type === 'radio') { if (el.value === v && !el.checked) { el.checked = true; n++; } } else if (el.type === 'checkbox') { if (el.checked !== v) { el.checked = !!v; n++; } } else if (el.value !== v) { el.value = v; n++; }
+    el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); });
+  if (!n) { rascApagar(rascChave(F)); return; }
+  F._rascSujo = true; const dt = new Date(r.em);
+  F.insertAdjacentHTML('afterbegin', `<div class="rasc-av no-print" style="margin:12px 16px 0;padding:10px 12px;border-radius:10px;background:var(--yel-soft);border:1px solid #F2D27A;font-size:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1"><b>Rascunho recuperado</b> (não salvo) de ${pad(dt.getDate())}/${pad(dt.getMonth() + 1)} às ${pad(dt.getHours())}:${pad(dt.getMinutes())}. Confira e clique em Salvar.</span><button type="button" class="btn sm" data-rasc-desc="1">Descartar rascunho</button></div>`);
+  F.querySelector('[data-rasc-desc]').onclick = () => { rascApagar(rascChave(F)); F._descartado = true; F._rascSujo = false; if (F.closest('#modal')) { fecharModal(); toast('Rascunho descartado. Abra de novo para começar do zero.'); } else { toast('Rascunho descartado'); render(); } };
+}
+document.addEventListener('input', e => { if (!e.isTrusted) return; const F = e.target.form || (e.target.closest && e.target.closest('form')); if (F && RASC_FORMS.includes(F.id)) { clearTimeout(F._rt); F._rt = setTimeout(() => rascSalvar(F), 300); } }, true);
+document.addEventListener('change', e => { if (!e.isTrusted) return; const F = e.target.form || (e.target.closest && e.target.closest('form')); if (F && RASC_FORMS.includes(F.id)) rascSalvar(F); }, true);
+document.addEventListener('submit', e => { const F = e.target; if (F && RASC_FORMS.includes(F.id)) { clearTimeout(F._rt); rascSalvar(F); F._enviado = true; RASC_PEND = {k:rascChave(F), em:Date.now()}; } }, true);
+new MutationObserver(() => RASC_FORMS.forEach(id => { const F = document.getElementById(id); if (F && !F._rascOk) setTimeout(() => rascRestaurar(F), 60); })).observe(document.body, {childList:true, subtree:true});
+window.addEventListener('pagehide', () => RASC_FORMS.forEach(id => { const F = document.getElementById(id); if (F && F._rascSujo && !F._enviado) rascSalvar(F); }));
+$('#modal').addEventListener('mousedown', e => { if (e.target.id !== 'modal') return; const F = $('#modal form'); if (F && F._rascSujo) { toast('Use “Voltar” ou ✕ para fechar. O que você digitou fica guardado como rascunho.'); return; } fecharModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').classList.contains('hide')) fecharModal(); });
 
 /* =============================== EVENTOS =============================== */
@@ -2610,7 +2652,7 @@ const ACOES = {
   novaConta: gid => { const n = prompt('Nome da nova conta:'); if (n && n.trim()) salvarPlano(g => g.find(x => x.id === gid).contas.push({id:'c' + uid(), nome:n.trim(), ativo:true}), 'Conta criada'); },
   renConta: id => { const c0 = PIDX()[id].c; const n = prompt('Novo nome da conta:', c0.nome); if (n && n.trim()) salvarPlano(g => g.forEach(x => x.contas.forEach(c => { if (c.id === id) c.nome = n.trim(); })), 'Conta renomeada'); },
   xmlNF: () => { const f = $('#fileXml'); f.value = ''; f.onchange = () => { const fs = [...f.files]; if (!fs.length) return; const prox = () => { const x = fs.shift(); if (x) { importarXML(x); if (fs.length) { const w = setInterval(() => { if (!ND && $('#modal').classList.contains('hide')) { clearInterval(w); prox(); } }, 500); } } }; prox(); }; f.click(); },
-  invSalvar: () => salvarInventario(), invCopiar: () => copiarUltimaContagem(), invAbrir: m => { V.p.mes = m; INVD = null; render(); window.scrollTo(0, 0); }, invExcluir: m => excluirInventario(m), cmvDet: r => { const [t, i] = r.split(':'); detalheCMV(DREF.ano, +i, t); },
+  invSalvar: () => salvarInventario(), invDescRasc: () => { if (!INVD) return; invRascApagar(INVD.mes); const m = INVD.mes; INVD = null; V.p.mes = m; render(); toast('Rascunho da contagem descartado'); }, invCopiar: () => copiarUltimaContagem(), invAbrir: m => { V.p.mes = m; INVD = null; render(); window.scrollTo(0, 0); }, invExcluir: m => excluirInventario(m), cmvDet: r => { const [t, i] = r.split(':'); detalheCMV(DREF.ano, +i, t); },
   orgEmb: () => organizarEmbalagens(), reorgPlano: () => reorganizarPlano(), orgRec: () => organizarReceitas(), prodDia: d => produtosDoDia(d), versPlano: () => modalVersoesPlano(), restPlano: i => restaurarPlano(i),
   delConta: id => { const c = PIDX()[id]; if (!c) return; const n = usoConta(id); if (n) return toast(`Esta conta tem ${n} lançamento(s). Use Desativar para manter o histórico.`, 1);
     if (confirm(`Excluir a conta "${c.c.nome}"? Ela não tem lançamentos.`)) salvarPlano(g => g.forEach(x => x.contas = x.contas.filter(k => k.id !== id)), 'Conta excluída'); },
@@ -2625,7 +2667,7 @@ const ACOES = {
   insAgr: () => { V.p.agrupar = !V.p.agrupar; render(); }, lerNota: () => { const f = $('#fileNota'); f.value = ''; f.onchange = () => f.files[0] && lerNotaCompra(f.files[0]); f.click(); }, impPrecos: () => { const f = $('#filePrecos'); f.value = ''; f.onchange = () => f.files[0] && lerArquivoPrecos(f.files[0]); f.click(); }
 };
 document.addEventListener('click', e => { const el = e.target.closest('[data-a]'); if (!el) return; const fn = ACOES[el.dataset.a]; if (!fn) return; e.preventDefault(); fn(el.dataset.id); });
-document.addEventListener('input', e => { const el = e.target; if (el.dataset && el.dataset.iq && INVD) { INVD.itens[+el.dataset.iq].qtd = el.value; INVD.dirty = true; clearTimeout(el._t); el._t = setTimeout(render, 600); return; } if (el.closest && el.closest('#fGeral,#fImpr,#fFin,#fIA')) V.dirty = true; if (el.dataset && el.dataset.rf) { aoEditarReceita(el); return; } if (el.dataset && el.dataset.in === 'rcbusca') { RCF.busca = el.value; clearTimeout(el._t); el._t = setTimeout(render, 220); return; } if (el.dataset && el.dataset.in === 'busca') { V.p.busca = el.value; clearTimeout(el._t); el._t = setTimeout(render, 180); } });
+document.addEventListener('input', e => { const el = e.target; if (el.dataset && el.dataset.iq && INVD) { INVD.itens[+el.dataset.iq].qtd = el.value; INVD.dirty = true; invRascSalvar(); clearTimeout(el._t); el._t = setTimeout(render, 600); return; } if (el.closest && el.closest('#fGeral,#fImpr,#fFin,#fIA')) V.dirty = true; if (el.dataset && el.dataset.rf) { aoEditarReceita(el); return; } if (el.dataset && el.dataset.in === 'rcbusca') { RCF.busca = el.value; clearTimeout(el._t); el._t = setTimeout(render, 220); return; } if (el.dataset && el.dataset.in === 'busca') { V.p.busca = el.value; clearTimeout(el._t); el._t = setTimeout(render, 180); } });
 document.addEventListener('change', async e => { const el = e.target;
   if (el.id === 'vDe' || el.id === 'vAte') { V.p[el.id === 'vDe' ? 'de' : 'ate'] = el.value; if (V.p.de > V.p.ate) V.p[el.id === 'vDe' ? 'ate' : 'de'] = el.value; render(); }
   if (el.dataset.dest) await gravar([{op:'update', col:'produtos', id:el.dataset.dest, data:{destino:el.value}}], 'Destino alterado');
@@ -2644,7 +2686,7 @@ document.addEventListener('change', async e => { const el = e.target;
   if (el.id === 'dDe') { DREF.per.de = +el.value; if (DREF.per.ate < DREF.per.de) DREF.per.ate = DREF.per.de; render(); } if (el.id === 'dAte') { DREF.per.ate = +el.value; if (DREF.per.de > DREF.per.ate) DREF.per.de = DREF.per.ate; render(); }
   if (el.id === 'invMes') { if (INVD && INVD.dirty && !confirm('Há quantidades não salvas. Trocar de mês mesmo assim?')) { el.value = INVD.mes; return; } V.p.mes = el.value; INVD = null; render(); }
   if (el.id === 'invData' && INVD) INVD.data = el.value;
-  if (el.dataset.ic && INVD) { INVD.itens[+el.dataset.ic].custo = r2(num(el.value)); INVD.dirty = true; render(); }
+  if (el.dataset.ic && INVD) { INVD.itens[+el.dataset.ic].custo = r2(num(el.value)); INVD.dirty = true; invRascSalvar(); render(); }
   if (el.id === 'dSoValor') { DREF.soValor = el.checked; render(); }
   if (el.id === 'dAV') { DREF.av = el.checked; render(); } if (el.id === 'dAH') { DREF.ah = el.checked; render(); }
   if (el.id === 'lSt') { V.p.st = el.value; render(); } if (el.id === 'rcAno') { RCF.ano = +el.value; render(); } if (el.id === 'rcIdx') { RCF.per[RCF.per.tipo] = +el.value; render(); } if (el.id === 'rcDe') { RCF.per.de = +el.value; if (RCF.per.ate < RCF.per.de) RCF.per.ate = RCF.per.de; render(); } if (el.id === 'rcAte') { RCF.per.ate = +el.value; if (RCF.per.de > RCF.per.ate) RCF.per.de = RCF.per.ate; render(); } if (el.id === 'rcSoPer') { RCF.soPer = el.checked; render(); } if (el.id === 'lAno') { LF().ano = +el.value; render(); } if (el.id === 'lIdx') { LF().per[LF().per.tipo] = +el.value; render(); } if (el.id === 'lDe') { const P = LF().per; P.de = +el.value; if (P.ate < P.de) P.ate = P.de; render(); } if (el.id === 'lAte') { const P = LF().per; P.ate = +el.value; if (P.de > P.ate) P.de = P.ate; render(); } 
