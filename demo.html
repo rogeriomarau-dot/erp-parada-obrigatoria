@@ -304,7 +304,7 @@ img[src=""]{display:none}
    abre em MODO DEMONSTRAÇÃO (dados só no navegador, sem impressão real).
    ===================================================================== */
 const CFG = {};
-const VERSAO = "3.12.0";
+const VERSAO = "3.12.1";
 const NUVEM = !!CFG.projectId;
 const LOGO = "";
 const CARDAPIO = {"produtos":[],"adicionais":[]};
@@ -508,7 +508,7 @@ const VIEWS = {
   produtos:{t:'Produtos', p:['admin']},
   adicionais:{t:'Adicionais', p:['admin']},
   pagar:{t:'Contas a pagar', p:['admin']}, receber:{t:'Contas a receber', p:['admin']}, dre:{t:'DRE', p:['admin']}, fluxo:{t:'Fluxo de caixa', p:['admin']}, plano:{t:'Plano de contas', p:['admin']}, fornecedores:{t:'Fornecedores', p:['admin']},
-  insumos:{t:'Insumos', p:['admin']}, subprodutos:{t:'Subprodutos', p:['admin']}, fichas:{t:'Fichas técnicas', p:['admin']}, cmv:{t:'Resumo CMV do cardápio', p:['admin']}, relcompras:{t:'Relatório de compras', p:['admin']}, inventario:{t:'Inventário (contagem de estoque)', p:['admin']}, receita:{t:'Ficha técnica', p:['admin']},
+  insumos:{t:'Insumos', p:['admin']}, subprodutos:{t:'Subprodutos', p:['admin']}, fichas:{t:'Fichas técnicas', p:['admin']}, cmv:{t:'Cardápio CMV', p:['admin']}, relcompras:{t:'Relatório de compras', p:['admin']}, inventario:{t:'Inventário (contagem de estoque)', p:['admin']}, receita:{t:'Ficha técnica', p:['admin']},
   config:{t:'Configurações', p:['admin']},
   usuarios:{t:'Usuários e acessos', p:['admin']}
 };
@@ -522,7 +522,7 @@ function desenharMenu(){
     <div class="grp">Vendas</div>${a('mesas','Mesas')}${a('tele','Tele-entrega / Retirada')}${a('vendas','Vendas do período')}${a('impressoes','Impressões')}
     ${pode('clientes') ? `<div class="grp">Cadastros</div>${a('clientes','Clientes')}${a('fornecedores','Fornecedores')}${a('produtos','Produtos')}${a('adicionais','Adicionais')}` : ''}
     ${U.perfil === 'admin' ? `<div class="grp">Financeiro</div>${a('dre','DRE')}${a('fluxo','Fluxo de caixa')}${a('pagar','Contas a pagar')}${a('receber','Contas a receber')}${a('plano','Plano de contas')}
-    <div class="grp">Fichas técnicas</div>${a('cmv','Resumo CMV')}${a('fichas','Fichas técnicas')}${a('subprodutos','Subprodutos')}${a('insumos','Insumos')}
+    <div class="grp">Fichas técnicas</div>${a('cmv','Cardápio CMV')}${a('fichas','Fichas técnicas')}${a('subprodutos','Subprodutos')}${a('insumos','Insumos')}
     <div class="grp">Compras e estoque</div>${a('inventario','Inventário (contagem)')}${off('Estoque e CMV teórico')}
     <div class="grp">Relatórios gerenciais</div>${a('relcompras','Relatório de compras')}` : ''}
     ${U.perfil === 'admin' ? `<div class="grp">Administração</div>${a('config','Configurações')}${a('usuarios','Usuários e acessos')}` : ''}
@@ -2049,7 +2049,7 @@ R.fichas = () => {
   ps.forEach(p => { const c = custoProduto(p); if (c.fonte === 'compra' || (!c.ft && p.tipo === 'Revenda')) return; (grupos[p.categoria] = grupos[p.categoria] || []).push({p, c}); });
   const orf = fts().filter(f => !f.produtoId || !S.produtos.some(p => p.id === f.produtoId));
   return `<div class="sec-h"><h2>Fichas técnicas</h2><button class="btn pri" data-a="novaRec" data-id="ft">+ Nova ficha</button></div>
-  <p class="small muted" style="margin:-4px 0 12px">Uma ficha por prato do cardápio. Itens de revenda (bebidas, sobremesas prontas) não precisam de ficha: o custo de compra é informado no Resumo CMV.</p>
+  <p class="small muted" style="margin:-4px 0 12px">Uma ficha por prato do cardápio. Itens de revenda (bebidas, sobremesas prontas) não precisam de ficha: o custo de compra é informado no Cardápio CMV.</p>
   ${Object.keys(grupos).length ? `<div class="card tw fixo"><table class="t"><thead><tr><th>Prato</th><th class="r">Custo</th><th class="r">Preço</th><th class="r">CMV</th><th class="r">Margem bruta</th><th class="r">Margem líquida</th><th>Situação</th><th></th></tr></thead><tbody>
     ${Object.entries(grupos).map(([g, xs]) => `<tr class="cat"><td colspan="8">${esc(g)}</td></tr>` + xs.map(({p, c}) => { const pr = precif(+p.preco, c.custo); return `<tr><td><b>${esc(p.nome)}</b>${c.ft && c.pend ? ` <span class="chip conta">${c.pend} pendente(s)</span>` : ''}</td><td class="r num">${c.custo ? brl(c.custo) : ''}</td><td class="r num">${brl(p.preco)}</td><td class="r num">${c.custo ? pct(c.custo, +p.preco) : ''}</td><td class="r num">${c.custo ? brl(pr.mb) : ''}</td><td class="r num" style="${pr.ml < 0 ? 'color:var(--red)' : ''}">${c.custo ? brl(pr.ml) : ''}</td><td>${c.ft ? chipCMV(c.custo, pr) : '<span class="chip neu">Sem ficha</span>'}</td><td class="r">${c.ft ? `<button class="btn sm" data-a="abrirRec" data-id="${c.ft.id}">Abrir</button>` : `<button class="btn sm" data-a="criarFicha" data-id="${p.id}">Criar ficha</button>`}</td></tr>`; }).join('')).join('')}</tbody></table></div>` : `<div class="empty card"><b>Nenhum prato ainda</b>Importe o cardápio (Produtos) e a estrutura das fichas (Insumos).</div>`}
   ${orf.length ? `<div class="card mt"><div class="pad"><h3 style="font-size:17px">Fichas sem prato ligado</h3></div><table class="t"><tbody>${orf.map(f => `<tr><td>${esc(f.nome)}</td><td class="r"><button class="btn sm" data-a="abrirRec" data-id="${f.id}">Abrir e ligar</button></td></tr>`).join('')}</tbody></table></div>` : ''}`;
